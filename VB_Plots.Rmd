@@ -1,6 +1,6 @@
 ---
 title: "VB Blame Graphs"
-author: "XX"
+author: "Code Written by the First Author"
 date: "2024-06-18"
 output: html_document
 ---
