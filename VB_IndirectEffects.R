@@ -1,6 +1,6 @@
 #Victim Blame Primary Analyses
 #This code estimates the 95% confidence intervals for the multilevel moderated mediation models estimated in Final Blame and Threat Analyses.sas
-#Written by the fifth, second, and third authors in 2024/2025
+#Written by the fifth, second, and first authors in 2024/2025
 #Last edited 2025.09.18
 
 #Preacher, K. J., & Selig, J. P. (2012). Advantages of Monte Carlo confidence intervals for indirect effects. Communication Methods and Measures, 6, 77-98.
