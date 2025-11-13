@@ -1,0 +1,653 @@
+---
+title: "VB Blame Graphs"
+author: "XX"
+date: "2024-06-18"
+output: html_document
+---
+
+```{r, Prepare data}
+
+# Plot code written by the first author
+
+library(openxlsx)
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(sjPlot)
+library(knitr)
+library(estimatr)
+library(car)
+library(sandwich)
+library(gee)
+library(rstatix)
+library(psych)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(emmeans)
+library(xtable)
+
+# Load in the data set for blame graphs
+df_long <- read.xlsx("Victim Blame S1-3 LONG 2025.08.04.xlsx")
+df_wide <- read.xlsx("Victim Blame S1-3 WIDE 2025.08.04.xlsx")
+
+df_long$polGen <- as.factor(df_long$polGen)
+df_long$session <- as.factor(df_long$session)
+
+df_wide$polGen <- as.factor(df_wide$polGen)
+df_wide$session <- as.factor(df_wide$session)
+
+# Rename variables
+
+# Target
+df_long$Target <- ifelse(df_long$VictVsPerp == 0, "Victim", "Perpetrator")
+df_long$Target <- factor(df_long$Target, levels = c("Perpetrator", "Victim"))
+
+table(df_long$VictVsPerp)
+table(df_long$Target)
+
+# Sex
+df_long$Sex <- ifelse(df_long$sexBin == 0, "Female", 
+                      ifelse(df_long$sexBin == 1, "Male", df_long$sexBin))
+df_long$Sex <- factor(df_long$Sex, levels = c("Female", "Male"))
+
+df_wide$Sex <- ifelse(df_wide$sexBin == 0, "Female", 
+                      ifelse(df_wide$sexBin == 1, "Male", df_wide$sexBin))
+df_wide$Sex <- factor(df_wide$Sex, levels = c("Female", "Male"))
+
+table(df_wide$sexBin)
+table(df_wide$Sex)
+
+# Ideology
+df_long$Ideology <- ifelse(df_long$polGen == 0, "Liberal",
+                           ifelse(df_long$polGen == 1, "Moderate", 
+                           ifelse(df_long$polGen == 2, "Conservative", df_long$polGen)))
+
+df_long$Ideology <- factor(df_long$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+df_wide$Ideology <- ifelse(df_wide$polGen == 0, "Liberal",
+                           ifelse(df_wide$polGen == 1, "Moderate", 
+                           ifelse(df_wide$polGen == 2, "Conservative", df_wide$polGen)))
+
+df_wide$Ideology <- factor(df_wide$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+table(df_wide$polGen)
+table(df_wide$Ideology)
+
+# Session
+df_long$Wave <- ifelse(df_long$session == 0, "Wave 1", 
+                          ifelse(df_long$session == 1, "Wave 2", "Wave 3"))
+df_long$Wave <- factor(df_long$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+df_wide$Wave <- ifelse(df_wide$session == 0, "Wave 1", 
+                          ifelse(df_wide$session == 1, "Wave 2", "Wave 3"))
+df_wide$Wave <- factor(df_wide$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+table(df_wide$Wave)
+table(df_wide$session)
+
+# Threat
+df_wide$Threat <- df_wide$fear
+
+```
+
+# Blame 
+
+```{r, Blame all cell means}
+
+means_all_blame <- read.xlsx("4. Blame_Means_All.xlsx")
+
+# Correct levels
+means_all_blame$Target <- factor(means_all_blame$Target, levels = c("Perpetrator", "Victim"))
+
+means_all_blame$Ideology <- factor(means_all_blame$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+means_all_blame$Wave <- factor(means_all_blame$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+means_all_blame$Sex <- factor(means_all_blame$Sex, levels = c("Female", "Male"))
+
+my_colors_target1 <- c("darkolivegreen", "darkorange", "darkolivegreen", "darkorange", "darkolivegreen", "darkorange")
+
+# Graph with just means 
+GraphBlame <- means_all_blame %>%
+  ggplot(aes(y = Blame, x = interaction(Wave), fill = interaction(Sex, Ideology))) +  
+  geom_bar(stat = "identity", position = position_dodge(0.9), alpha = 0.2, color = "black") +
+  labs(title = "Effect of Sex, Ideology, and Wave on Perpetrator and Victim Blame", 
+       y = "Blame", 
+       x = "", 
+       fill = "Sex") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title.y = element_text(size = 12, color = "black"),
+    strip.text = element_text(size = 14),
+    legend.text = element_text(size = 10, color = "black"),
+    plot.title = element_text(size = 16, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(breaks = c(1,2,3,4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  facet_grid(Target ~ Ideology, scales = "free")
+
+GraphBlame
+
+# ggsave("graphBlameAllMeans.pdf", plot = GraphBlame, width = 10, height = 6, units = "in", dpi = 300)
+
+```
+
+```{r, Graph of target on blame}
+
+# Read in blame means from SAS
+means_target_blame <- read.xlsx("5. Blame_Means_Target.xlsx")
+
+# Colors 
+my_colors_target1 <- c("#5499c7", "#800080")
+
+#Graph
+Graph_target_blame <- means_target_blame %>%
+  ggplot(aes(y = selfBlame, x = Target, fill = Target)) +
+  geom_jitter(data = df_long, aes(x = Target, y = selfBlame, color = Target),
+              width = 0.2, height = .05, size = .1, alpha = .5) +
+  geom_bar(stat = "identity", position = position_dodge(.905), alpha = 0.2, color = "black") +
+  geom_errorbar(aes(ymin = selfBlame - se_blame, ymax = selfBlame + se_blame), 
+                position = position_dodge(width = 0.905), width = .0) +  
+  labs(title = "Perpetrator and Victim Blame", 
+       y = "Blame", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(breaks = c(1,2,3,4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  scale_color_manual(values = my_colors_target1)
+
+Graph_target_blame
+
+# ggsave("graphBlameTarget.pdf", plot = Graph_target_blame, width = 5.5, height = 6, units = "in", dpi = 300)
+
+```
+
+```{r, Graph of sex and target on blame}
+
+# Read in blame means from SAS
+means_sex_blame <- read.xlsx("7. Blame_Means_Sex.xlsx")
+
+# Correct the levels of sex
+means_sex_blame$Sex <- factor(means_sex_blame$Sex, levels = c("Female", "Male"))
+
+# Filter so does not graph NAs 
+df_long_filtered_sex <- df_long %>% filter(!is.na(Sex))
+
+my_colors_target1 <- c("darkolivegreen", "darkorange")
+
+# Graph
+Graph_sex_blame <- means_sex_blame %>%
+  ggplot(aes(x = Target, y = selfBlame, fill = Sex)) +
+  geom_jitter(data = df_long_filtered_sex, aes(x = Target, y = selfBlame, color = Sex),
+             position = position_jitterdodge(jitter.width = 0.2, jitter.height = .05, dodge.width = 0.905), 
+             size = .1, alpha = .5) +
+  geom_bar(stat = "identity", position = position_dodge(.905), alpha = 0.2, color = "black") +
+  geom_errorbar(aes(ymin = selfBlame - se_blame, ymax = selfBlame + se_blame), 
+              position = position_dodge(width = 0.905), width = 0) + 
+  labs(title = "A. Effect of Sex on Perpetrator and Victim Blame", 
+       y = "Blame", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(breaks = c(1,2,3,4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  scale_color_manual(values = my_colors_target1)
+
+Graph_sex_blame
+
+ggsave("graphBlameSex.pdf", plot = Graph_sex_blame, width = 7, height = 8, units = "in", dpi = 300)
+
+```
+
+```{r, Graph of political ideology and target on blame}
+
+# Read in blame means from SAS
+means_polGen_blame <- read.xlsx("8. Blame_Means_polGen.xlsx")
+
+# Correct the levels of ideology
+means_polGen_blame$Ideology <- factor(means_polGen_blame$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+# Colors
+my_colors_target1 <- c("#5499c7", "#800080", "red3")
+my_colors_target2 <- c("#5499c7", "#800080", "red3")
+my_colors_target3 <- c("#5499c7", "#800080", "red3")
+
+# Filter so does not graph NAs 
+df_long_filtered_polgen <- df_long %>% filter(!is.na(Ideology))
+
+# Graph 
+Graph_polgen_blame <- means_polGen_blame %>%
+  ggplot(aes(x = Target, y = selfBlame, fill = Ideology)) +
+  geom_jitter(data = df_long_filtered_polgen, aes(x = Target, y = selfBlame, color = Ideology),
+              position = position_jitterdodge(jitter.width = 0.2, jitter.height = .05, dodge.width = 0.905),
+              size = 0.1, alpha = 0.5) +
+  geom_bar(stat = "identity", position = position_dodge(.905), alpha = 0.2, color = "black") +
+  geom_errorbar(aes(ymin = selfBlame - se_blame, ymax = selfBlame + se_blame), 
+              position = position_dodge(width = 0.905), width = 0) +  
+  labs(title = "B. Effect of Ideology on Perpetrator and Victim Blame", 
+       y = "Blame", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(breaks = c(1,2,3,4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  scale_color_manual(values = my_colors_target1)
+
+Graph_polgen_blame
+
+ggsave("graphBlameIde.pdf", plot = Graph_polgen_blame, width = 7, height = 8, units = "in", dpi = 300)
+
+```
+
+```{r, Graph of wave and target on blame}
+
+# Read in blame means from SAS
+means_session_blame <- read.xlsx("9. Blame_Means_Session.xlsx")
+
+# Correct the levels of session
+means_session_blame$Wave <- factor(means_session_blame$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+df_long_filtered_session <- df_long %>% filter(!is.na(Wave))
+
+# Colors
+my_colors_target1 <- c("#004c4c", "#008080", "#b2dfdf")
+
+# Graph 
+Graph_session_blame <- means_session_blame %>%
+  ggplot(aes(x = Target, y = selfBlame, fill = Wave)) +
+  geom_jitter(data = df_long_filtered_session, aes(x = Target, y = selfBlame, color = Wave),
+              position = position_jitterdodge(jitter.width = 0.2, jitter.height = .05, dodge.width = 0.905),
+              size = 0.1, alpha = 0.5) +
+  geom_bar(stat = "identity", position = position_dodge(.905), alpha = 0.3, color = "black") +
+  geom_errorbar(aes(ymin = selfBlame - se_blame, ymax = selfBlame + se_blame), 
+              position = position_dodge(width = 0.905), width = 0) +  
+  labs(title = "C. Effect of Wave on Perpetrator and Victim Blame", 
+       y = "Blame", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(breaks = c(1,2,3,4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  scale_color_manual(values = my_colors_target1)
+
+Graph_session_blame
+
+# ggsave("graphBlameSession.pdf", plot = Graph_session_blame, width = 7, height = 8, units = "in", dpi = 300)
+
+```
+
+# Blame difference score
+
+```{r, Blame difference score all cell means}
+
+means_all_difscore <- read.xlsx("10. BlameDifScore_Means.xlsx")
+
+# Correct levels
+means_all_difscore$Ideology <- factor(means_all_difscore$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+means_all_difscore$Wave <- factor(means_all_difscore$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+means_all_difscore$Sex <- factor(means_all_difscore$Sex, levels = c("Female", "Male"))
+
+my_colors_target1 <- c("darkolivegreen", "darkorange", "darkolivegreen", "darkorange", "darkolivegreen", "darkorange")
+
+GraphDifScore <- means_all_difscore %>%
+   ggplot(aes(y = DiffScore, x = interaction(Wave), fill = interaction(Sex, Ideology))) +  
+  geom_bar(stat = "identity", position = position_dodge(0.9), alpha = 0.3, color = "black") +
+  geom_hline(yintercept = 0, linetype = "solid", color = "black") +
+  labs(title = "Effect of Sex, Political Ideology, and Wave on Blame Difference Score", 
+       y = "Blame Difference Score (Perpetrator - Victim)", 
+       x = "", 
+       fill = "Ideology") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title.y = element_text(size = 12, color = "black"),
+    strip.text = element_text(size = 14),
+    legend.text = element_text(size = 10, color = "black"),
+    plot.title = element_text(size = 16, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(-4, 4)) +
+  scale_y_continuous(breaks = c(-4, -2, 0, 2, 4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  facet_wrap(~ Ideology, scales = "free")  
+
+GraphDifScore
+
+# ggsave("graphDifScoreAllMeans.pdf", plot = GraphDifScore, width = 10, height = 6, units = "in", dpi = 300)
+
+```
+
+# Blame using social ideology
+
+```{r, Blame social ideology}
+
+means_all_social_blame <- read.xlsx("11. Blame_Social_Means_All.xlsx")
+
+# Correct levels
+means_all_social_blame$Target <- factor(means_all_social_blame$Target, levels = c("Perpetrator", "Victim"))
+
+means_all_social_blame$Ideology <- factor(means_all_social_blame$Ideology, levels = c("Social Liberal", "Social Moderate", "Social Conservative"))
+
+means_all_social_blame$Wave <- factor(means_all_social_blame$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+means_all_social_blame$Sex <- factor(means_all_social_blame$Sex, levels = c("Female", "Male"))
+
+my_colors_target1 <- c("darkolivegreen", "darkorange", "darkolivegreen", "darkorange", "darkolivegreen", "darkorange")
+
+# Graph with just means 
+GraphSocialBlame <- means_all_social_blame %>%
+  ggplot(aes(y = Blame, x = interaction(Wave), fill = interaction(Sex, Ideology))) +  
+  geom_bar(stat = "identity", position = position_dodge(0.9), alpha = 0.2, color = "black") +
+  labs(title = "Effect of Sex, Social Ideology, and Wave on Perpetrator and Victim Blame", 
+       y = "Blame", 
+       x = "", 
+       fill = "Sex") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title.y = element_text(size = 12, color = "black"),
+    strip.text = element_text(size = 14),
+    legend.text = element_text(size = 10, color = "black"),
+    plot.title = element_text(size = 16, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(1, 4)) +
+  scale_y_continuous(breaks = c(0, 1, 2, 3, 4)) +
+  scale_fill_manual(values = my_colors_target1) +
+  facet_grid(Target ~ Ideology, scales = "free")  # Faceting by Sex and Session
+
+GraphSocialBlame
+
+# ggsave("graphSocialBlameAllMeans.pdf", plot = GraphSocialBlame, width = 10, height = 6, units = "in", dpi = 300)
+
+```
+
+# Threat
+
+```{r, Threat all cell means}
+
+means_all_threat <- read.xlsx("0. Threat_Means_All.xlsx")
+
+# Correct levels
+means_all_threat$Ideology <- factor(means_all_threat$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+means_all_threat$Wave <- factor(means_all_threat$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+means_all_threat$Sex <- factor(means_all_threat$Sex, levels = c("Female", "Male"))
+
+my_colors_target1 <- c("darkolivegreen", "darkorange", "darkolivegreen", "darkorange", "darkolivegreen", "darkorange")
+
+GraphThreat <- means_all_threat %>%
+  ggplot(aes(y = Threat, x = interaction(Wave), fill = interaction(Sex, Ideology))) + 
+  geom_bar(stat = "identity", position = position_dodge(0.9), alpha = 0.3, color = "black") +
+  labs(title = "Effect of Sex, Ideology, and Wave on Feelings of Threat", 
+       y = "Threat", 
+       x = "", 
+       fill = "Ideology") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title.y = element_text(size = 12, color = "black"),
+    strip.text = element_text(size = 14),
+    legend.text = element_text(size = 10, color = "black"),
+    plot.title = element_text(size = 16, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(0, 10)) + 
+  scale_fill_manual(values = my_colors_target1) +
+  facet_wrap(~ Ideology, scales = "free")  # Faceting by session, scales free
+
+GraphThreat
+
+ggsave("graphThreatAllMeans.pdf", plot = GraphThreat, width = 10, height = 6, units = "in", dpi = 300)
+
+```
+
+```{r, Graph of sex on threat}
+
+# Read in threat means from SAS
+means_sex_threat <- read.xlsx('1. Threat_Means_Sex.xlsx')
+
+# Correct the levels of sex
+means_sex_threat$Sex <- factor(means_sex_threat$Sex, levels = c("Female", "Male"))
+
+my_colors_threat <- c('#93C572', '#93C572')
+
+# Filter so does not graph NAs 
+df_wide_filtered_sex <- df_wide %>% filter(!is.na(Sex))
+
+# Graph
+Graph_sex_threat <- means_sex_threat %>%
+  ggplot(aes(x = Sex, y = Threat, fill = Sex)) +
+  geom_jitter(data = df_wide_filtered_sex, aes(x = Sex, y = Threat, color = Sex),
+              width = 0.2, height = .05, size = .1, alpha = .9) +
+  geom_bar(stat = "identity", position = position_dodge(.905), alpha = 0.4) +
+  geom_errorbar(aes(ymin = Threat - SE, ymax = Threat + SE), 
+              position = position_dodge(width = 0.905), width = 0) +  
+  labs(title = "Effect of Sex on Feelings of Threat", 
+       y = "Threat", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(0, 10)) +
+  # scale_y_continuous(breaks = c(0, 5, 10)) +
+  scale_fill_manual(values = my_colors_threat) +
+  scale_color_manual(values = my_colors_threat)
+
+Graph_sex_threat
+
+# ggsave("graphThreatSex.pdf", plot = Graph_sex_threat, width = 5.5, height = 6, units = "in", dpi = 300)
+
+```
+
+```{r, Threat graph by ideology}
+
+# Read in threat means from SAS
+means_ideology_threat <- read.xlsx('2. Threat_Means_polGen.xlsx')
+
+# Correct the levels of ideology
+means_ideology_threat$Ideology <- factor(means_ideology_threat$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+my_colors_threat <- c('#93C572', '#93C572', '#93C572')
+
+# Filter so does not graph NAs 
+df_wide_filtered_polGen <- df_wide %>% filter(!is.na(Ideology))
+
+# Graph
+Graph_polGen_threat <- means_ideology_threat %>%
+  ggplot(aes(x = Ideology, y = Threat, fill = Ideology)) +
+  geom_jitter(data = df_wide_filtered_polGen, aes(x = Ideology, y = Threat, color = Ideology),
+              width = 0.2, height = .05, size = .1, alpha = .9) +
+  geom_bar(stat = "identity", position = position_dodge(.905), alpha = 0.4) +
+  geom_errorbar(aes(ymin = Threat - SE, ymax = Threat + SE), 
+              position = position_dodge(width = 0.905), width = 0) +  
+  labs(title = "A. Effect of Ideology on Feelings of Threat", 
+       y = "Threat", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(0, 10)) +
+  # scale_y_continuous(breaks = c(0, 5, 10)) +
+  scale_fill_manual(values = my_colors_threat) +
+  scale_color_manual(values = my_colors_threat)
+
+Graph_polGen_threat
+
+# ggsave("graphThreatpolGen.pdf", plot = Graph_polGen_threat, width = 8, height = 6, units = "in", dpi = 300)
+
+```
+
+```{r, Threat graph by session}
+
+# Read in threat means from SAS
+means_session_threat <- read.xlsx('3. Threat_Means_Session.xlsx')
+
+my_colors_threat <- c('#93C572', '#93C572', '#93C572')
+
+# Graph
+Graph_session_threat <- means_session_threat %>%
+  ggplot(aes(x = Wave, y = Threat, fill = Wave)) +
+  geom_jitter(data = df_wide, aes(x = Wave, y = Threat, color = Wave),
+              width = 0.2, height = .05, size = .1, alpha = .9) +
+  geom_bar(stat = "identity", position = position_dodge(width = .905), alpha = 0.4) +
+  geom_errorbar(aes(ymin = Threat - SE, ymax = Threat + SE), 
+              position = position_dodge(width = 0.905), width = 0) +  
+  labs(title = "B. Effect of Wave on Feelings of Threat", 
+       y = "Threat", 
+       x = "") +
+  theme_minimal() + 
+  theme(
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 20, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),
+    axis.title.y = element_text(size = 20, color = "black"),
+    legend.text = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 21, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(0, 10)) +
+  # scale_y_continuous(breaks = c(0, 5, 10)) +
+  scale_fill_manual(values = my_colors_threat) +
+  scale_color_manual(values = my_colors_threat)
+
+Graph_session_threat
+
+ggsave("graphThreatSession.pdf", plot = Graph_session_threat, width = 8, height = 6, units = "in", dpi = 300)
+
+```
+
+# Threat using social ideology
+
+```{r, Threat social ideology}
+
+means_all_social_threat <- read.xlsx("4. Threat_Social_Means_All.xlsx")
+
+# Correct levels
+means_all_social_threat$Ideology <- factor(means_all_social_threat$Ideology, levels = c("Social Liberal", "Social Moderate", "Social Conservative"))
+
+means_all_social_threat$Wave <- factor(means_all_social_threat$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+means_all_social_threat$Sex <- factor(means_all_social_threat$Sex, levels = c("Female", "Male"))
+
+my_colors_target1 <- c("darkolivegreen", "darkorange", "darkolivegreen", "darkorange", "darkolivegreen", "darkorange")
+
+# Graph
+GraphSocialThreat <- means_all_social_threat %>%
+  ggplot(aes(y = Threat, x = interaction(Wave), fill = interaction(Sex, Ideology))) +  
+  geom_bar(stat = "identity", position = position_dodge(0.9), alpha = 0.3, color = "black") +
+  labs(title = "Effect of Sex, Social Ideology, and Wave on Feelings of Threat", 
+       y = "Threat", 
+       x = "", 
+       fill = "Ideology") +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 12, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title.y = element_text(size = 12, color = "black"),
+    strip.text = element_text(size = 14),
+    legend.text = element_text(size = 10, color = "black"),
+    plot.title = element_text(size = 16, margin = margin(b = 13), color = "black"),
+    axis.line = element_line(color = "black")
+  ) +
+  coord_cartesian(ylim = c(0, 10)) + 
+  scale_fill_manual(values = my_colors_target1) +
+  facet_wrap(~ Ideology, scales = "free")  # Faceting by session, scales free
+
+GraphSocialThreat
+
+ggsave("graphSocialThreatAllMeans.pdf", plot = GraphSocialThreat, width = 10, height = 6, units = "in", dpi = 300)
+
+```
+
