@@ -3,7 +3,7 @@
   2. Threat within and across session among liberal, moderate, and conservative males and females (a path)
   3. Mediation of blame by threat across session among liberal, moderate, and conservative males and females (multi-level moderated mediation, see R script for indirect effect estimates)
 
-* Written by the fifth, second, and third authors in 2024/2025
+* Written by the fifth, second, and first authors in 2024/2025
 * Data files: 
   VB S1-3 STACKED.xlsx
   VB S1-3 WIDE.xlsx
