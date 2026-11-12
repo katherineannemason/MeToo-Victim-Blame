@@ -1,0 +1,413 @@
+---
+title: "VB Balance Checks + Corrs"
+author: "Code Written By First Author"
+date: "2026-11-06"
+output: html_document
+---
+
+```{r, Prepare data}
+
+library(openxlsx)
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(sjPlot)
+library(knitr)
+library(estimatr)
+library(car)
+library(sandwich)
+library(gee)
+library(rstatix)
+library(psych)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(emmeans)
+library(xtable)
+library(Superpower)
+library(pwranova)
+library(EnvStats)
+
+# Load in the data set for blame graphs
+df_long <- read.xlsx("Victim Blame S1-3 LONG 2026.11.11.xlsx")
+df_wide <- read.xlsx("Victim Blame S1-3 WIDE 2026.11.11.xlsx")
+
+df_long$polGen <- as.factor(df_long$polGen)
+df_long$session <- as.factor(df_long$session)
+
+df_wide$polGen <- as.factor(df_wide$polGen)
+df_wide$session <- as.factor(df_wide$session)
+
+# Rename variables
+
+# Target
+df_long$Target <- ifelse(df_long$VictVsPerp == 0, "Victim", "Perpetrator")
+df_long$Target <- factor(df_long$Target, levels = c("Perpetrator", "Victim"))
+
+table(df_long$VictVsPerp)
+table(df_long$Target)
+
+# Sex
+df_long$Sex <- ifelse(df_long$sexBin == 0, "Female", 
+                      ifelse(df_long$sexBin == 1, "Male", df_long$sexBin))
+df_long$Sex <- factor(df_long$Sex, levels = c("Female", "Male"))
+
+df_wide$Sex <- ifelse(df_wide$sexBin == 0, "Female", 
+                      ifelse(df_wide$sexBin == 1, "Male", df_wide$sexBin))
+df_wide$Sex <- factor(df_wide$Sex, levels = c("Female", "Male"))
+
+table(df_wide$sexBin)
+table(df_wide$Sex)
+
+# Ideology
+df_long$Ideology <- ifelse(df_long$polGen == 0, "Liberal",
+                           ifelse(df_long$polGen == 1, "Moderate", 
+                           ifelse(df_long$polGen == 2, "Conservative", df_long$polGen)))
+
+df_long$Ideology <- factor(df_long$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+df_wide$Ideology <- ifelse(df_wide$polGen == 0, "Liberal",
+                           ifelse(df_wide$polGen == 1, "Moderate", 
+                           ifelse(df_wide$polGen == 2, "Conservative", df_wide$polGen)))
+
+df_wide$Ideology <- factor(df_wide$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+table(df_wide$polGen)
+table(df_wide$Ideology)
+
+# Session
+df_long$Wave <- ifelse(df_long$session == 0, "Wave 1", 
+                          ifelse(df_long$session == 1, "Wave 2", "Wave 3"))
+df_long$Wave <- factor(df_long$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+df_wide$Wave <- ifelse(df_wide$session == 0, "Wave 1", 
+                          ifelse(df_wide$session == 1, "Wave 2", "Wave 3"))
+df_wide$Wave <- factor(df_wide$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+table(df_wide$Wave)
+table(df_wide$session)
+
+# Threat
+df_wide$Threat <- df_wide$fear
+
+```
+
+```{r, Sample compared to US population}
+
+# Sex
+sex_table <- df_wide %>%
+  count(sexBin) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Sex", digits = 1)
+
+sex_table 
+# 58.7% female, 40.5% male, and <1% other
+# Compare to US census: 50.9% female; 49.1% male
+# https://www.census.gov/data/tables/time-series/demo/popest/2020s-national-detail.html
+
+##
+
+# Age
+age_table <- df_wide %>%
+  summarize(
+  age_median = median(Age, na.rm = T)
+  ) %>%
+  kable(caption = "Age", digits = 2)
+
+age_table 
+# Median - 33
+# Compare to US Census age: 39.4 
+# https://www.census.gov/data/tables/time-series/demo/popest/2020s-national-detail.html
+
+##
+
+# Race
+race_table <- df_wide %>%
+  count(race) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Race", digits = 1)
+
+race_table
+
+# Sample: 
+# 77.3% White
+# 7.3% Black/African American 
+# 5.4% Hispanic/Latino
+# 6.7% Asian
+# 1% American Indian or Alaskan Native
+# 0% Native Hawaiian or Other Pacific Islander
+# 2.3% Other/more than one race
+
+# Population (can include Hispanic)
+# 72.3% White
+# 13.5% Black
+# 20.5% Hispanic/Latino
+# 6.9% Asian
+# 2.1% American Indian or Alaskan Native
+# 0.3% Native Hawaiian and Other Pacific Islander
+# 4.9% more than one race
+# US census https://www.census.gov/data/tables/time-series/demo/popest/2020s-national-detail.html
+
+##
+
+# Sexual orientation
+sexualorient_table <- df_wide %>%
+  count(sexOrien_Bin) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Sexual orientation", digits = 1)
+
+sexualorient_table 
+# 83.9 straight, 16.1 non-straight
+# Compare to 9% of population https://news.gallup.com/poll/332522/percentage-americans-lgbt.aspx
+
+##
+
+# Ideology
+ideology_table <- df_wide %>%
+  count(polGen) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  # arrange(desc(n)) %>%
+  kable(caption = "Ideology", digits = 1)
+
+ideology_table 
+# 38.0 liberal, 32.9 moderate, 25.3 conservative
+# Compare to 25% lib, 34% mod, and 37% cons in US https://news.gallup.com/poll/655190/political-parties-historically-polarized-ideologically.aspx
+
+```
+
+```{r, Balance checks}
+
+# Make sure demos balanced across wave
+# Age, religiosity, sex, ideology, and sexual orientation
+
+# Continuous variables 
+
+# Age
+summary(aov(Age ~ session, data = df_wide))
+# p = .524
+
+# Religiosity 
+summary(aov(relPrac ~ session, data = df_wide))
+# p = .056
+
+##
+
+# Categorical variables (sex, ideology, sexual orientation)
+
+# Sex
+chisq.test(table(df_wide$sexBin, df_wide$session))
+# p = .645
+
+# Ideology
+chisq.test(table(df_wide$polGen, df_wide$session))
+# p = .436
+
+# Sexual orientation
+chisq.test(table(df_wide$sexOrien_Bin, df_wide$session))
+# p = .024 - sig. Maybe because cell sizes small for non-straight
+
+# Check if driven by small amount of non-straight people
+prop.table(table(df_wide$session, df_wide$sexOrien_Bin), margin = 1) # Proportions within each session (so row add up to 1)
+
+# Yes
+# Wave 1 - 20%
+# Wave 2 - 13%
+# Wave 3 - 15%
+
+# Pairwise comparisons of proportion
+
+# Create matrix
+sex_orient_tab <- table(df_wide$session, df_wide$sexOrien_Bin)
+sex_orient_tab
+
+# Test
+pairwise.prop.test(x = sex_orient_tab, p.adjust.method = "none")
+# Wave 1 differs from Wave 2
+
+```
+
+```{r, Table for balance checks}
+
+# Create table with age, religiosity, sex, ideology, and sexual orientation at each wave
+demos_wave_table <- df_wide %>%
+  group_by(Wave) %>%
+  summarize(
+    Age = sprintf("%.2f (%.2f)",
+                  mean(Age, na.rm = T),
+                  sd_age = sd(Age, na.rm = T)),
+    Religiosity = sprintf("%.2f (%.2f)",
+                          mean(relPrac, na.rm = T),
+                          sd(relPrac, na.rm = T)),
+    'Male (vs. Female)' = sprintf("%.2f (%.2f)",
+                          mean(sexBin, na.rm = T),
+                          sd(sexBin, na.rm = T)),
+    'Moderate (vs. Liberal)' = sprintf("%.2f (%.2f)",
+                          mean(as.numeric(pgen_dc1), na.rm = T),
+                          sd(as.numeric(pgen_dc1), na.rm = T)),
+    'Conservative (vs. Liberal)' = sprintf("%.2f (%.2f)",
+                          mean(as.numeric(pgen_dc2), na.rm = T),
+                          sd(as.numeric(pgen_dc2), na.rm = T)),
+    'Straight (vs. Non-Straight)' = sprintf("%.2f (%.2f)",
+                         mean(as.numeric(sexOrien_Bin), na.rm = T),
+                         sd(as.numeric(sexOrien_Bin), na.rm = T)),
+    .groups = "drop"
+    
+    )
+
+demos_wave_table
+
+# Swap rows and columns
+demos_wave_table_transposed <- as.data.frame(t(demos_wave_table[-1]))
+demos_wave_table_transposed <- demos_wave_table_transposed %>%
+  rename('Wave 1 (a)' = V1,
+         'Wave 2 (b)' = V2,
+         'Wave 3 (c)' = V3,)
+
+demos_wave_table_transposed
+
+align_spec <- c("l","r", "r", "r")
+
+# Latex code
+xtable(demos_wave_table_transposed, align = align_spec, booktabs = T)
+
+```
+
+
+# Correlation table
+
+```{r, Descriptives and correlation table}
+
+# Select only the needed variables from the df
+vars <- c("selfPerp", "selfVict", "fear", "sexBin", "pgen_dc1", "pgen_dc2",
+          "polSoc", "sess_dc1", "sess_dc2", "Age", "relPrac", "sexOrien_Bin") 
+
+df_sub <- df_wide %>%
+  dplyr::select(all_of(vars))
+
+# Corr matrix
+cor_mat <- as.data.frame(round(cor(df_sub, use = "pairwise.complete.obs"), 2)) 
+cor_mat
+
+##
+
+# Format table for Latex
+
+# Blank the upper triangle
+cor_mat[upper.tri(cor_mat)] <- NA
+
+# Function to compute correlation p-values
+cor_pmat <- function(mat) {
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  colnames(p.mat) <- colnames(mat)
+  rownames(p.mat) <- colnames(mat)
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      test <- cor.test(mat[, i], mat[, j], use = "pairwise.complete.obs")
+      p.mat[i, j] <- p.mat[j, i] <- test$p.value
+    }
+  }
+  p.mat
+}
+
+# Get correlation and p-value matrices
+cor_mat <- cor(df_sub, use = "pairwise.complete.obs")
+p_mat <- cor_pmat(df_sub)
+
+# Blank upper triangle for p values
+cor_mat[upper.tri(cor_mat)] <- NA
+p_mat[upper.tri(p_mat)] <- NA
+
+# Significance stars
+get_stars <- function(p) {
+  ifelse(is.na(p), "", 
+         ifelse(p < 0.001, "***", 
+         ifelse(p < 0.01, "**", 
+         ifelse(p < 0.05, "*", ""))))
+}
+
+# Format correlations (round, remove leading 0s, add stars)
+formatted_cor <- matrix("", nrow = nrow(cor_mat), ncol = ncol(cor_mat),
+                        dimnames = dimnames(cor_mat))
+
+for (i in 1:nrow(cor_mat)) {
+  for (j in 1:ncol(cor_mat)) {
+    val <- cor_mat[i, j]
+    if (!is.na(val)) {
+      stars <- get_stars(p_mat[i, j])
+      val_fmt <- sprintf("%.2f", val)
+      val_fmt <- sub("^-0\\.", "-.", val_fmt)   # remove leading 0 
+      val_fmt <- sub("^0\\.", ".", val_fmt)     
+      formatted_cor[i, j] <- paste0(val_fmt, stars)
+    }
+  }
+}
+
+# Add row names as a column
+formatted_df <- as.data.frame(formatted_cor)
+formatted_df <- tibble::rownames_to_column(formatted_df, var = "Variable")
+
+formatted_df
+
+# Add means and SDs
+formatted_df$Mean <- round(sapply(df_sub, mean, na.rm = TRUE), 2)
+formatted_df$SD <- round(sapply(df_sub, sd, na.rm = TRUE), 2)
+
+# Move mean and SD to front
+formatted_df <- formatted_df %>%
+  relocate(Mean, .after = Variable) %>%
+  relocate(SD, .after = Mean)
+
+formatted_df
+
+# Rename variables (row)
+formatted_df <- formatted_df %>%
+  dplyr:: mutate(Variable = as.character(Variable)) %>%  # convert factor to character
+  dplyr::mutate(Variable = dplyr::recode(Variable,
+      selfPerp = "1. Perpetrator Blame",
+      selfVict = "2. Victim Blame",
+      fear = "3. Threat",
+      sexBin = "4. Sex (Female = 0)",
+      pgen_dc1 = "5. Moderate (vs. Liberal)",
+      pgen_dc2 = "6. Conservative (vs. Liberal)",
+      polSoc = "7. Social Ideology",
+      sess_dc1 = "8. Wave 2 (vs. Wave 1)",
+      sess_dc2 = "9. Wave 3 (vs. Wave 1)",
+      Age = "10. Age",
+      relPrac = "11. Religiosity",
+      sexOrien_Bin = "12. Sexual Orientation (Straight = 0)",
+  ))
+
+formatted_df
+
+# Rename variables (column)
+formatted_df <- formatted_df %>%
+  rename(
+    '1.' = selfPerp,
+    '2.' = selfVict,
+    '3.' = fear,
+    '4.' = sexBin,
+    '5.' = pgen_dc1,
+    '6.' = pgen_dc2,
+    '7.' = polSoc,
+    '8.' = sess_dc1,
+    '9.' = sess_dc2,
+    '10.' = Age,
+    '11.' = relPrac,
+    '12.' = sexOrien_Bin,
+  )
+
+formatted_df
+
+align_spec <- c("l", "l", "c", "c", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S", "S")
+
+descriptives_control_xtable <- xtable(formatted_df, align = align_spec, booktabs = T, include.rownames = FALSE, 
+                          sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+  
+# Print appendix
+print(descriptives_control_xtable, include.rownames = FALSE, sanitize.colnames.function = identity, sanitize.text.function = identity, floating = FALSE)
+
+```

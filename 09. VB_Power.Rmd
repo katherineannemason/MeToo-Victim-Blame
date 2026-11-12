@@ -1,0 +1,419 @@
+---
+title: "VB Power Analysis"
+author: "Code Written By First Author"
+date: "2026-10-26"
+output: html_document
+---
+
+```{r, Prepare data}
+
+library(openxlsx)
+library(tidyverse)
+library(ggplot2)
+library(car)
+library(sjPlot)
+library(knitr)
+library(estimatr)
+library(car)
+library(sandwich)
+library(gee)
+library(rstatix)
+library(psych)
+library(haven)
+library(dplyr)
+library(tidyr)
+library(emmeans)
+library(xtable)
+library(Superpower)
+library(pwranova)
+
+# Load in the data set for blame graphs
+df_long <- read.xlsx("Victim Blame S1-3 LONG 2026.11.11.xlsx")
+df_wide <- read.xlsx("Victim Blame S1-3 WIDE 2025.11.11.xlsx")
+
+df_long$polGen <- as.factor(df_long$polGen)
+df_long$session <- as.factor(df_long$session)
+
+df_wide$polGen <- as.factor(df_wide$polGen)
+df_wide$session <- as.factor(df_wide$session)
+
+# Rename variables
+
+# Target
+df_long$Target <- ifelse(df_long$VictVsPerp == 0, "Victim", "Perpetrator")
+df_long$Target <- factor(df_long$Target, levels = c("Perpetrator", "Victim"))
+
+table(df_long$VictVsPerp)
+table(df_long$Target)
+
+# Sex
+df_long$Sex <- ifelse(df_long$sexBin == 0, "Female", 
+                      ifelse(df_long$sexBin == 1, "Male", df_long$sexBin))
+df_long$Sex <- factor(df_long$Sex, levels = c("Female", "Male"))
+
+df_wide$Sex <- ifelse(df_wide$sexBin == 0, "Female", 
+                      ifelse(df_wide$sexBin == 1, "Male", df_wide$sexBin))
+df_wide$Sex <- factor(df_wide$Sex, levels = c("Female", "Male"))
+
+table(df_wide$sexBin)
+table(df_wide$Sex)
+
+# Ideology
+df_long$Ideology <- ifelse(df_long$polGen == 0, "Liberal",
+                           ifelse(df_long$polGen == 1, "Moderate", 
+                           ifelse(df_long$polGen == 2, "Conservative", df_long$polGen)))
+
+df_long$Ideology <- factor(df_long$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+df_wide$Ideology <- ifelse(df_wide$polGen == 0, "Liberal",
+                           ifelse(df_wide$polGen == 1, "Moderate", 
+                           ifelse(df_wide$polGen == 2, "Conservative", df_wide$polGen)))
+
+df_wide$Ideology <- factor(df_wide$Ideology, levels = c("Liberal", "Moderate", "Conservative"))
+
+table(df_wide$polGen)
+table(df_wide$Ideology)
+
+# Session
+df_long$Wave <- ifelse(df_long$session == 0, "Wave 1", 
+                          ifelse(df_long$session == 1, "Wave 2", "Wave 3"))
+df_long$Wave <- factor(df_long$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+df_wide$Wave <- ifelse(df_wide$session == 0, "Wave 1", 
+                          ifelse(df_wide$session == 1, "Wave 2", "Wave 3"))
+df_wide$Wave <- factor(df_wide$Wave, levels = c("Wave 1", "Wave 2", "Wave 3"))
+
+table(df_wide$Wave)
+table(df_wide$session)
+
+# Threat
+df_wide$Threat <- df_wide$fear
+
+```
+
+```{r, Mixed ANOVA with VB data}
+
+# Omnibus
+mixed_anova <- anova_test(
+  data = df_long,
+  dv = selfBlame,
+  wid = RespondentID,
+  between = session,
+  within = Target
+)
+
+get_anova_table(mixed_anova) # Matches SPSS
+
+# Means and SDs
+table_ms_sds <- df_long %>%
+  dplyr::group_by(Target, session) %>%
+  dplyr::summarize(
+    M = mean(selfBlame, na.rm = T),
+    SD = sd(selfBlame, na.rm = T),
+    n = sum(!is.na(selfBlame)),
+    .groups = "drop" # ungroup
+    )
+
+table_ms_sds
+
+```
+
+
+# Power analyses based on mixed ANOVA
+
+```{r, Post-hoc power analysis}
+
+# Using the Superpower package (Caldwell et al., 2022)
+# https://aaroncaldwell.us/SuperpowerBook/repeated-measures-anova.html#multivariate-anova-manova
+
+# Set up corr matrix of victim and perp within each session
+df_session1 <- df_wide %>%
+  dplyr::filter(session == 0)
+
+df_session2 <- df_wide %>%
+  dplyr::filter(session == 1)
+
+df_session3 <- df_wide %>%
+  dplyr::filter(session == 2)
+
+table(df_session1$session)
+table(df_session2$session)
+table(df_session3$session)
+
+cor.test(df_session1$selfPerp, df_session1$selfVict) # -0.74
+r_s1 <- -0.74
+cor.test(df_session2$selfPerp, df_session2$selfVict) # -0.73
+r_s2 <- -0.73
+cor.test(df_session3$selfPerp, df_session3$selfVict) # -0.73
+r_s3 <- -0.73
+
+# Assume corr of 0 for between-subjects effects
+
+# Create corr matrix
+rho_mat <- diag(6)
+
+rho_mat[1, 4] <- r_s1
+rho_mat[4, 1] <- r_s1
+
+rho_mat[2, 5] <- r_s2
+rho_mat[5, 2] <- r_s2
+
+rho_mat[3, 6] <- r_s3
+rho_mat[6, 3] <- r_s3
+
+rho_mat
+
+# Define parameters 
+mu <- table_ms_sds$M 
+n <- 361 # 1083/3, function won't take unequal n
+sd <- table_ms_sds$SD
+alpha_level <- 0.05
+labelnames = c("Target", "Perpetator", "Victim",
+               "Session", "S1", "S2", "S3")
+
+# Run function
+design_result <- ANOVA_design("2w*3b",
+                              n = n,
+                              sd = sd,
+                              mu = mu,
+                              r = -.74,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_result <- ANOVA_exact(design_result, verbose = FALSE,
+                            correction = "none",
+                            alpha_level = .05)
+
+exact_result$main_results # Omnibus, matches SPSS for omnibus 
+view(exact_result$pc_results) # Pairwise comparisons
+
+```
+
+```{r, N needed to achieve 80% for all effects of interest}
+
+# Keep everything the same except the sample size
+
+# 600 per, 1200 total
+sens_result1 <- ANOVA_design("2w*3b",
+                              n = 600, # Try 600*3 = 1800
+                              sd = sd,
+                              mu = mu_original,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_sens_result1 <- ANOVA_exact(sens_result1, verbose = FALSE,
+                                  correction = "none",
+                                  alpha_level = .05)
+
+exact_sens_result1$main_results 
+view(exact_sens_result1$pc_results) 
+
+##
+
+# 800 per, 2400 total
+sens_result2 <- ANOVA_design("2w*3b",
+                              n = 800, # Try 400*3 = 1200
+                              sd = sd,
+                              mu = mu_original,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_sens_result2 <- ANOVA_exact(sens_result2, verbose = FALSE,
+                                  correction = "none",
+                                  alpha_level = .05)
+
+exact_sens_result2$main_results 
+view(exact_sens_result2$pc_results) 
+
+##
+
+# 1,000 per, 3,000 total
+sens_result3 <- ANOVA_design("2w*3b",
+                              n = 1000, # Try 1000*3 = 3000
+                              sd = sd,
+                              mu = mu_original,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_sens_result3 <- ANOVA_exact(sens_result3, verbose = FALSE,
+                                  correction = "none",
+                                  alpha_level = .05)
+
+exact_sens_result3$main_results 
+view(exact_sens_result3$pc_results) 
+
+##
+
+# 1,500 per, 4,500 total
+sens_result4 <- ANOVA_design("2w*3b",
+                              n = 1500, # Try 1500*3 = 4500
+                              sd = sd,
+                              mu = mu_original,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_sens_result4 <- ANOVA_exact(sens_result4, verbose = FALSE,
+                                  correction = "none",
+                                  alpha_level = .05)
+
+exact_sens_result4$main_results 
+view(exact_sens_result4$pc_results) 
+
+##
+
+# 2,000 per, 6,000 total
+sens_result5 <- ANOVA_design("2w*3b",
+                              n = 2000, # Try 2000*3 = 6000
+                              sd = sd,
+                              mu = mu_original,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_sens_result5 <- ANOVA_exact(sens_result5, verbose = FALSE,
+                                  correction = "none",
+                                  alpha_level = .05)
+
+exact_sens_result5$main_results 
+view(exact_sens_result5$pc_results)
+
+##
+
+# 2,600 per, 7,800 total
+sens_result6 <- ANOVA_design("2w*3b",
+                              n = 2600, # Try 2600*3 = 7800
+                              sd = sd,
+                              mu = mu_original,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+exact_sens_result6 <- ANOVA_exact(sens_result6, verbose = FALSE,
+                                  correction = "none",
+                                  alpha_level = .05)
+
+exact_sens_result6$main_results 
+view(exact_sens_result6$pc_results)
+
+# Need about 7,800 Ps to reach 80% power to detect pairwise comparisons between session 1 and 2 on vict and perp blame
+
+```
+
+
+# Sensitivity Analyses
+
+```{r, MDE for wave*target interaction}
+
+# Use pwranova package (Muto, 2026)
+# https://mutopsy.github.io/pwranova/
+
+sens_interaction <- pwranova(
+  nlevels_b = 3,       
+  nlevels_w = 2,       
+  n_total = 1083,
+  alpha = .05,
+  power = .80,
+  cohensf = NULL,      
+  epsilon = 1,
+  target = "B1:W1"    
+)
+
+sens_interaction
+
+# Cohens f - 0.09 (Matches g*power where can specify corrs between repeated measures)
+# Partial eta squared - 0.008
+
+```
+
+```{r, MDE for pairwise comparisons between waves}
+
+# Hold sample size consistent and vary means
+# Want to see a difference between waves 1 and 2 on perp and vict blame
+
+# Original means 
+mu_original <- c(
+  3.507650, 3.468976, 3.331378,
+  1.720184, 1.760306, 1.948283)
+
+# Perp: Decrease session 2 and 3 by .05
+# Vict: Increase session 2 and 3 by .05
+
+delta <- 0.05
+
+# Define parameters 
+mu <- mu_original + c(
+  0, -delta, -delta, 
+  0,  delta,  delta
+)
+# Don't necessarily need to alter session 3 but do so if want to maintain dif between wave 2 and 3
+# Note that it means dif between wave 1 vs 3 is exaggerated
+# But all we really care about is wave 1 vs 2
+
+n <- 361 # 1083/3, function won't take unequal n
+sd <- table_ms_sds$SD
+alpha_level <- 0.05
+labelnames = c("Target", "Perpetator", "Victim",
+               "Session", "S1", "S2", "S3"
+               )
+
+# Run function
+mean_dif_increase_result1 <- ANOVA_design("2w*3b",
+                              n = n,
+                              sd = sd,
+                              mu = mu,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+mean_dif_increase_result_exact_result1 <- ANOVA_exact(mean_dif_increase_result1, verbose = FALSE,
+                                                     correction = "none",
+                                                     alpha_level = .05)
+
+mean_dif_increase_result_exact_result1$main_results # Omnibus, matches SPSS for omnibus 
+view(mean_dif_increase_result_exact_result1$pc_results) # Pairwise comparisons
+
+# Perp: 71.87 power
+# Vict: 65.79 power
+
+##
+
+# Perp: Decrease session 2 and 3 by 0.067
+# Vict: Increase session 2 and 3 by 0.067
+
+delta <- 0.067
+
+# Define parameters 
+mu <- mu_original + c(
+  0, -delta, -delta,
+  0,  delta,  delta
+)
+
+# Run function
+mean_dif_increase_result2 <- ANOVA_design("2w*3b",
+                              n = n,
+                              sd = sd,
+                              mu = mu,
+                              r = rho_mat,
+                              labelnames = labelnames,
+                              plot = TRUE)
+
+mean_dif_increase_result_exact_result2 <- ANOVA_exact(mean_dif_increase_result2, verbose = FALSE,
+                                                     correction = "none",
+                                                     alpha_level = .05)
+
+mean_dif_increase_result_exact_result2$main_results # Omnibus, matches SPSS for omnibus 
+view(mean_dif_increase_result_exact_result2$pc_results) # Pairwise comparisons
+
+# Perp: 85.67 power (d = -0.23)
+# Vict: 80.32 power (d = 0.21)
+
+# MDE ~ d = 0.21
+
+```
+
+
+
